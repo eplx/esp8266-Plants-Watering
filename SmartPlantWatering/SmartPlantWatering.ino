@@ -1,17 +1,23 @@
+
 /*
-   Smart Plant Watering - Version: 1.0 - December 2017
+   Smart Plant Watering - Version: 1.01 - February 2018
    Author: Esteban Pizzini - esteban.pizzini@gmail.com
    Purpose: Measure temperature & humidity and water plants automatically based on weather conditions.
+
+   Release notes:
+   1.00 - Initial version
+   1.01 - Implemented WifiManager library for configuring WIFI networks - Source: https://github.com/tzapu/WiFiManager  
+          
 */
 #include <SimpleDHT.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
-#include <ESP8266HTTPClient.h>
+#include <WiFiManager.h>
 
-
-//WIFI connection configuration - update it first!
-const char* ssid = "SSID";
-const char* pwd = "PWD";
+// Required for LIGHT_SLEEP_T delay mode
+extern "C" {
+#include "user_interface.h"
+}
 
 /* Watering configuration - reference
    86400000 = each 24hours
@@ -31,39 +37,32 @@ int pinPhotoCell = A0;                    // PhotoCell Input (Analog)
 int pinWaterPump = D3;                    // WaterPump relay Output (Digital
 long PumpInterval = defaultPumpInterval;  // default interval to water  (24 hours)
 long PumpDuration = 20000;                // default water duration (seconds)
-long WeatherCheckInterval = 10800000;     // default weather check interval (3 hours)
+//long WeatherCheckInterval = 10800000;     // default weather check interval (3 hours)
 unsigned long PumpPrevMillis = 0;         // store last time for Water Pump
 unsigned long WeatherCheckPrevMillis = 0; // Weather prev millis
+
 unsigned long currentMillis = 0;          // actual millis
 int WaterPlantTimes = 0;                  // count times plant was watered
-float photoCellReading = 0;                   // Light reading (analog value)
+float photoCellReading = 0;               // Light reading (Enable Light Sleep modeanalog value)
 String Light;                             // Light string
 SimpleDHT11 dht11;                        // Temperature & Humidity object
+const int sleepTimeSec = 10;              // Time to sleep (in seconds)
+
 
 /* Initial Setup */
 void setup() {
+
   Serial.begin(115200);
   pinMode(LED_BUILTIN, OUTPUT);   // initialize digital pin LED_BUILTIN as an output.
   pinMode(pinWaterPump, OUTPUT);  // initialize Relay PIN as an output.
 
-  //connecting to wifi
-  Serial.println();
-  Serial.print("Connecting to wifi ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, pwd);
+  WiFiManager wifiManager; // Enable wifiManager
+  wifiManager.setDebugOutput(false);
 
-  //attempt to connect to wifi
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(400);
-    Serial.print("."); //attempting connection
-  }
-  Serial.println("Wifi connected - Ok!");
-  Serial.print("IP address: ");
-  Serial.print("http://");
-  Serial.print(WiFi.localIP());
-  Serial.println("/");
+  WiFi.mode(WIFI_STA); // for light Sleep mode
+  wifi_set_sleep_type(LIGHT_SLEEP_T); // Enable Light Sleep mode
 
+  //Initiate web server
   server.on("/", handleRoot);
   server.on("/html", handleRootHTML);
   server.on("/waternow", handleWaterNow);
@@ -72,10 +71,32 @@ void setup() {
   });
   server.begin();
   Serial.println("HTTP server initiated - Ok!");
+
+  // Config WIFI
+  //WifiManager configuration - it will try to connect to known network or prompt for information to connect.
+  //WifiManager library used -- https://github.com/tzapu/WiFiManager
+  
+  wifiManager.setBreakAfterConfig(true);  //exit after config instead of connecting
+
+  //reset settings - for testing
+  //wifiManager.resetSettings();
+  
+  //If no previous WIFI settings are available, it will be enabled as AP with default SSID "SmartWaterPlant" and password "water"
+  if (!wifiManager.autoConnect("SmartWaterPlant", "water")) {
+    Serial.println("failed to connect...Reset in progress");
+    delay(3000);
+    ESP.reset();
+    delay(5000);
+  }
+
 }
 
 /* Main Loop */
 void loop() {
+
+  byte temperature = 0;
+  byte humidity = 0;
+  int err = SimpleDHTErrSuccess;
 
   //handle web requests
   digitalWrite(LED_BUILTIN, HIGH);
@@ -97,9 +118,6 @@ void loop() {
   }
 
   // Adjust Watering based on temperature & humidity sensors (DHT11)
-  byte temperature = 0;
-  byte humidity = 0;
-  int err = SimpleDHTErrSuccess;
 
   if ((err = dht11.read(pinDHT11, &temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
     Serial.print("Read DHT11 failed, err="); Serial.println(err); delay(1000);
@@ -226,7 +244,7 @@ void handleRootHTML() {
     <h1>Next plant watering in</h1>\
     <p>%02dh:%02dm</p>\
     <h1>Time since last plant watering</h1>\
-    <p>%02dd:%02dh:%02dm</p>\
+    <p>%02dd:%02dh:%02dm</p>, we should reset as see if it connects\
     <h1>Times watered since last reset</h1>\
     <p>%02d times</p>\
     <h1>Watering duration</h1>\
