@@ -15,9 +15,9 @@
 #include <WiFiManager.h>
 
 // Required for LIGHT_SLEEP_T delay mode
-extern "C" {
-#include "user_interface.h"
-}
+//extern "C" {
+//#include "user_interface.h"
+//}
 
 /* Watering configuration - reference
    86400000 = each 24hours
@@ -55,12 +55,12 @@ void setup() {
   Serial.begin(115200);
   pinMode(LED_BUILTIN, OUTPUT);   // initialize digital pin LED_BUILTIN as an output.
   pinMode(pinWaterPump, OUTPUT);  // initialize Relay PIN as an output.
-
+  
   WiFiManager wifiManager; // Enable wifiManager
   wifiManager.setDebugOutput(false);
 
-  WiFi.mode(WIFI_STA); // for light Sleep mode
-  wifi_set_sleep_type(LIGHT_SLEEP_T); // Enable Light Sleep mode
+  //WiFi.mode(WIFI_STA); // for light Sleep mode
+  //wifi_set_sleep_type(LIGHT_SLEEP_T); // Enable Light Sleep mode
 
   //Initiate web server
   server.on("/", handleRoot);
@@ -94,9 +94,6 @@ void setup() {
 /* Main Loop */
 void loop() {
 
-  byte temperature = 0;
-  byte humidity = 0;
-  int err = SimpleDHTErrSuccess;
 
   //handle web requests
   digitalWrite(LED_BUILTIN, HIGH);
@@ -118,7 +115,9 @@ void loop() {
   }
 
   // Adjust Watering based on temperature & humidity sensors (DHT11)
-
+  byte temperature = 0;
+  byte humidity = 0;
+  int err = SimpleDHTErrSuccess;
   if ((err = dht11.read(pinDHT11, &temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
     Serial.print("Read DHT11 failed, err="); Serial.println(err); delay(1000);
   }
@@ -244,7 +243,7 @@ void handleRootHTML() {
     <h1>Next plant watering in</h1>\
     <p>%02dh:%02dm</p>\
     <h1>Time since last plant watering</h1>\
-    <p>%02dd:%02dh:%02dm</p>, we should reset as see if it connects\
+    <p>%02dd:%02dh:%02dm</p>\
     <h1>Times watered since last reset</h1>\
     <p>%02d times</p>\
     <h1>Watering duration</h1>\
