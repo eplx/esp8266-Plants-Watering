@@ -6,7 +6,8 @@
 
    Release notes:
    1.00 - Initial version
-   1.01 - Implemented WifiManager library for configuring WIFI networks - Source: https://github.com/tzapu/WiFiManager  
+   1.01 - Implemented WifiManager library for configuring WIFI networks - Source: https://github.com/tzapu/WiFiManager 
+   1.02 - Clean up code & fixed DHT11 read issue 
           
 */
 #include <SimpleDHT.h>
@@ -32,12 +33,13 @@ ESP8266WebServer server(8356); //Create web server instance - using port 8356
     PhotoCell --> A0
     Relay --> D3
 */
+
 int pinDHT11 = D2;                        // DHT digital Input (Digital)
 int pinPhotoCell = A0;                    // PhotoCell Input (Analog)
 int pinWaterPump = D3;                    // WaterPump relay Output (Digital
 long PumpInterval = defaultPumpInterval;  // default interval to water  (24 hours)
 long PumpDuration = 20000;                // default water duration (seconds)
-//long WeatherCheckInterval = 10800000;     // default weather check interval (3 hours)
+long WeatherCheckInterval = 1800000;     // default weather check interval (30 minutes)
 unsigned long PumpPrevMillis = 0;         // store last time for Water Pump
 unsigned long WeatherCheckPrevMillis = 0; // Weather prev millis
 
@@ -47,6 +49,9 @@ float photoCellReading = 0;               // Light reading (Enable Light Sleep m
 String Light;                             // Light string
 SimpleDHT11 dht11;                        // Temperature & Humidity object
 const int sleepTimeSec = 10;              // Time to sleep (in seconds)
+
+byte temperature = 0;
+byte humidity = 0;
 
 
 /* Initial Setup */
@@ -59,18 +64,8 @@ void setup() {
   WiFiManager wifiManager; // Enable wifiManager
   wifiManager.setDebugOutput(false);
 
-  //WiFi.mode(WIFI_STA); // for light Sleep mode
-  //wifi_set_sleep_type(LIGHT_SLEEP_T); // Enable Light Sleep mode
-
-  //Initiate web server
-  server.on("/", handleRoot);
-  server.on("/html", handleRootHTML);
-  server.on("/waternow", handleWaterNow);
-  server.on("/inline", []() {
-    server.send(200, "text/plain", "Smart Water Plant");
-  });
-  server.begin();
-  Serial.println("HTTP server initiated - Ok!");
+  WiFi.mode(WIFI_STA); // for light Sleep mode
+  wifi_set_sleep_type(LIGHT_SLEEP_T); // Enable Light Sleep mode
 
   // Config WIFI
   //WifiManager configuration - it will try to connect to known network or prompt for information to connect.
@@ -89,6 +84,23 @@ void setup() {
     delay(5000);
   }
 
+  //Initiate web server
+  server.on("/", handleRoot);
+  server.on("/html", handleRootHTML);
+  server.on("/waternow", handleWaterNow);
+  server.on("/inline", []() {
+    server.send(200, "text/plain", "Smart Water Plant");
+  });
+  server.begin();
+  Serial.println("HTTP server initiated - Ok!");
+
+  // Initial DHT11 read
+  int err = SimpleDHTErrSuccess;
+  if ((err = dht11.read(pinDHT11, &temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
+     Serial.print("Read DHT11 failed, err="); Serial.println(err); delay(1000);
+  }
+  
+
 }
 
 /* Main Loop */
@@ -98,7 +110,7 @@ void loop() {
   //handle web requests
   digitalWrite(LED_BUILTIN, HIGH);
   server.handleClient(); // handle web clients
-  delay(2000);
+  delay(5000);
   digitalWrite(LED_BUILTIN, LOW);
 
   // Water Logic
@@ -114,22 +126,28 @@ void loop() {
     pumpWater(0); // pump water on
   }
 
-  // Adjust Watering based on temperature & humidity sensors (DHT11)
-  byte temperature = 0;
-  byte humidity = 0;
-  int err = SimpleDHTErrSuccess;
-  if ((err = dht11.read(pinDHT11, &temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
-    Serial.print("Read DHT11 failed, err="); Serial.println(err); delay(1000);
-  }
 
-  if (temperature > 24 & temperature < 31 && humidity < 60) {
-    PumpDuration = 25000;
-  }
-  else if (temperature > 30 && humidity < 60) {
-    PumpDuration = 30000;
-  }
-  else {
-    PumpDuration = 20000;
+  // Check forecast & adjust Watering interval
+  if (currentMillis - WeatherCheckPrevMillis >= WeatherCheckInterval) {
+      WeatherCheckPrevMillis = currentMillis;
+
+      
+        // Read temperature/humidity from DHT11 sensor and adjust Watering based on that
+        int err = SimpleDHTErrSuccess;
+        if ((err = dht11.read(pinDHT11, &temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
+          Serial.print("Read DHT11 failed, err="); Serial.println(err); delay(1000);
+        }
+      
+        if (temperature > 24 & temperature < 31 && humidity < 60) {
+          PumpDuration = 25000;
+        }
+        else if (temperature > 30 && humidity < 60) {
+          PumpDuration = 30000;
+        }
+        else {
+          PumpDuration = 20000;
+        }
+
   }
 }
 
@@ -139,14 +157,14 @@ void handleRoot() {
   // print in Serial
   Serial.println("=================================");
   // read without samples.
-  byte temperature = 0;
+/*  byte temperature = 0;
   byte humidity = 0;
   int err = SimpleDHTErrSuccess;
   if ((err = dht11.read(pinDHT11, &temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
     Serial.print("Read DHT11 failed, err="); Serial.println(err); delay(1000);
 
   }
-
+*/
   // read PhotoCell (Light)Temperature
   photoCellReading = analogRead(pinPhotoCell);
   // We'll have a few threshholds, qualitatively determined
@@ -193,14 +211,14 @@ void handleRoot() {
 
 /* handle /html webpage */
 void handleRootHTML() {
-  byte temperature = 0; // sensor temperature
+ /* byte temperature = 0; // sensor temperature
   byte humidity = 0;  // sensor humidity
 
   int err = SimpleDHTErrSuccess;
   if ((err = dht11.read(pinDHT11, &temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
     Serial.print("Read DHT11 failed, err="); Serial.println(err); delay(1000);
   }
-
+*/
   // read PhotoCell (Light)
   int LightValue = 0;
   photoCellReading = analogRead(pinPhotoCell);
