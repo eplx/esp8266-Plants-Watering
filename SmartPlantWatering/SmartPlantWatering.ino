@@ -7,7 +7,8 @@
    Release notes:
    1.00 - Initial version
    1.01 - Implemented WifiManager library for configuring WIFI networks - Source: https://github.com/tzapu/WiFiManager 
-   1.02 - Clean up code & fixed DHT11 read issue 
+   1.02 - Clean up code & fixed DHT11 read issue.
+   1.03 - Fixed IP address display issue on serial output. Cleaned up output messages.
           
 */
 #include <SimpleDHT.h>
@@ -58,6 +59,7 @@ byte humidity = 0;
 void setup() {
 
   Serial.begin(115200);
+  Serial.println("Smart Plant Watering - Initializing...");
   pinMode(LED_BUILTIN, OUTPUT);   // initialize digital pin LED_BUILTIN as an output.
   pinMode(pinWaterPump, OUTPUT);  // initialize Relay PIN as an output.
   
@@ -67,18 +69,18 @@ void setup() {
   WiFi.mode(WIFI_STA); // for light Sleep mode
   wifi_set_sleep_type(LIGHT_SLEEP_T); // Enable Light Sleep mode
 
-  // Config WIFI
+  // Wifi configuration - uses WifiManger library
   //WifiManager configuration - it will try to connect to known network or prompt for information to connect.
   //WifiManager library used -- https://github.com/tzapu/WiFiManager
   
   wifiManager.setBreakAfterConfig(true);  //exit after config instead of connecting
 
-  //reset settings - for testing
-  //wifiManager.resetSettings();
+  //reset settings - only for testing
+  //wifiManager.resetSettings(); // uncomment this line only for testing and reset wifi settings.
   
   //If no previous WIFI settings are available, it will be enabled as AP with default SSID "SmartWaterPlant" and password "water"
   if (!wifiManager.autoConnect("SmartWaterPlant", "water")) {
-    Serial.println("failed to connect...Reset in progress");
+    Serial.println("Wifi - connection failed...Reset in progress");
     delay(3000);
     ESP.reset();
     delay(5000);
@@ -92,12 +94,13 @@ void setup() {
     server.send(200, "text/plain", "Smart Water Plant");
   });
   server.begin();
-  Serial.println("HTTP server initiated - Ok!");
+  Serial.println("HTTP server initiated. Listeining on IP:");
+  Serial.println(WiFi.localIP());
 
   // Initial DHT11 read
   int err = SimpleDHTErrSuccess;
   if ((err = dht11.read(pinDHT11, &temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
-     Serial.print("Read DHT11 failed, err="); Serial.println(err); delay(1000);
+     Serial.print("ERROR: Read DHT11 failed, err="); Serial.println(err); delay(1000);
   }
   
 
@@ -135,7 +138,7 @@ void loop() {
         // Read temperature/humidity from DHT11 sensor and adjust Watering based on that
         int err = SimpleDHTErrSuccess;
         if ((err = dht11.read(pinDHT11, &temperature, &humidity, NULL)) != SimpleDHTErrSuccess) {
-          Serial.print("Read DHT11 failed, err="); Serial.println(err); delay(1000);
+          Serial.print("ERROR: Read DHT11 failed, err="); Serial.println(err); delay(1000);
         }
       
         if (temperature > 24 & temperature < 31 && humidity < 60) {
@@ -246,7 +249,7 @@ void handleRootHTML() {
   snprintf ( message, 1500,
 "<html>\
   <head>\
-    <title>Plant Water Pump</title>\
+    <title>Smart Plant Watering</title>\
     <style>\
       body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
     </style>\
@@ -312,13 +315,13 @@ void handleWaterNow() {
 void pumpWater(int mode) {
 
   if (mode == 1) {
-    Serial.println("Water = On");
+    //Serial.println("Water = On");
     WaterPlantTimes++; // Increase water plant counter
     digitalWrite(pinWaterPump, HIGH);
     digitalWrite(LED_BUILTIN, HIGH);
   }
   else {
-    Serial.println("Water = Off");
+    //Serial.println("Water = Off");
     digitalWrite(pinWaterPump, LOW);
     digitalWrite(LED_BUILTIN, LOW);
   }
