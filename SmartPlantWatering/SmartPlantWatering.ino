@@ -94,7 +94,7 @@ void setup() {
     server.send(200, "text/plain", "Smart Water Plant");
   });
   server.begin();
-  Serial.println("HTTP server initiated. Listeining on IP:");
+  Serial.println("HTTP server initiated on port 8356. Listeining on IP:");
   Serial.println(WiFi.localIP());
 
   // Initial DHT11 read
