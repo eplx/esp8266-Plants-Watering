@@ -1,6 +1,4 @@
-# esp8266-Plants-Watering
-Plants watering controlled by esp8266
-
+# Smart Plant Watering
 Using this project you can water your plant/s automatically considering external temperature, humidity and light. Also you can use this as a home weather station and check temperature, humidity and lightness from your cellphone or computer just using a browser..
 
 Are you leaving on vacation and nobody is available to water the plants.... This project will help!!
