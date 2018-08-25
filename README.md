@@ -18,3 +18,5 @@ Requirements:
     small diameter transparent clear soft hose (may vary based on your water pump connectors)
 
 View more details on https://www.instructables.com/id/Smart-Plant-Watering
+
+ThingSpeaks channel: https://thingspeak.com/channels/504661
