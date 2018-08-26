@@ -17,6 +17,7 @@
    2.01 - Added Ultrasonic sensor to measure water level in the water can
           Modified LighSensor logic
    2.02 - Added "runmode" function to choose between *normal* or *energy-saving* modes
+   2.03 - Fixed next plant watering issue (time not updating when the device wakes up)
 */
 #include <SimpleDHT.h>          // DHT11 temperature & humidity sensor library
 #include <ESP8266WiFi.h>        // Wifi library
@@ -43,12 +44,12 @@ const unsigned long defaultSleepInterval = 900000;  // 15 minutes
 /* ThingSpeaks */
 int ThingSpeaks_WAIT = 15500; // if you are using free ThingSpeaks version you need to wait about 15 seconds between updates.
 char ThingSpeaks_URL[100] = "http://api.thingspeak.com/update?api_key=";
-char ThingSpeaks_KEY[100] = "xxxxx"; // Thingspeak key
+char ThingSpeaks_KEY[100] = "xxx"; // Thingspeak key
 
 /* OpenWeatherMap */
 // This information will adjust watering frequency/duration considering actual weather and forecast for the next hours.
-char openWeatherAPIid[10] = "0000";             // Location - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - ID
-char openWeatherAPIappid[50] = "xxxx";          // Your APP ID - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - APP ID
+char openWeatherAPIid[10] = "000";             // Location - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - ID
+char openWeatherAPIappid[50] = "xxx";          // Your APP ID - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - APP ID
 
 /* Sensors PINS (refer to schematic)
     DH11 --> D2
@@ -160,8 +161,8 @@ int WeatherForecast[3];               // OpenWeatherAPI - next two days
 
     //ultrasonic Sensor (Water level)
     WaterLevelcurrent = checkWaterLevel();
-    (WaterLevelcurrent > 0) ? Serial.println("WaterLevel sensor - Ok") :Serial.println("WaterLevel sensor - Failed (no water)");
-    
+    (WaterLevelcurrent > 0) ? Serial.println("WaterLevel sensor - Ok ") :Serial.println("WaterLevel sensor - Failed (no water)");
+    Serial.println(WaterLevelcurrent);
     Serial.println("...checking OpenWeatherMap for current weather & forecast");
     /* Weather forecast - default values */
     WeatherForecast[0]=0;
@@ -178,12 +179,16 @@ int WeatherForecast[3];               // OpenWeatherAPI - next two days
       unsigned long SleepMicroSeconds = 0;
       EEPROM.begin(512);
       loadCurrentStatus();
-      checkWaterPump();
+      if (checkWaterPump() == 1) {
+        currentMillis = 0 + SleepInterval;      // init currentMillis - no need to track last value for saving energy mode
+        lastMillis = 0;                         // Init lastMillis 
+      }
+      else {
+        currentMillis = lastMillis + millis() + SleepInterval;  
+      }
       powerSaving();
       Serial.println("...sending information to ThingSpeaks");
-      updateThingSpeaks();
-      
-      currentMillis = lastMillis + millis() + SleepInterval;
+      updateThingSpeaks();      
       saveCurrentStatus();
       
       SleepMicroSeconds = (unsigned long) SleepInterval * (unsigned long) 1000;
@@ -419,7 +424,7 @@ int checkPhotoCellSensor (){
   float photoCellReading = 0;               
   int LightValue = 0;
   photoCellReading = analogRead(pinPhotoCell);
-  LightValue = photoCellReading * 100 / 1100;
+  LightValue = photoCellReading * 100 / 1024;
   return LightValue;
 }
 
@@ -470,7 +475,7 @@ void smartWatering() {
  * description: adjust sleepInterval based on Light & Weather
  */
 void powerSaving() {
-          if (WeatherForecast[0] < 800 && WeatherActual < 800) {
+          if ((WeatherForecast[0] < 800 && WeatherActual < 800) || LightValue < 10) {
           SleepInterval = defaultSleepInterval * 4; // every 1 hour
         }
         else if (LightValue < 30 || WeatherForecast[0] < 800) {
@@ -490,13 +495,14 @@ void powerSaving() {
  */
 int checkWaterPump() {
       // Check if it is time for plant watering - PumpWater Logic
-      Serial.println(currentMillis);
+      /*Serial.println(currentMillis);
       Serial.println(PumpPrevMillis);
       Serial.println(PumpInterval);
+      */
       if (runmode == 2) {
             if (currentMillis - PumpPrevMillis >= PumpInterval) {
               PumpPrevMillis = 0;     // init currentMillis - no need to track last value for saving energy mode
-              currentMillis = 0;      // init currentMillis - no need to track last value for saving energy mode
+              //currentMillis = 0;      // init currentMillis - no need to track last value for saving energy mode
               PumpInterval = defaultPumpInterval;
               Serial.println("Water pump activated");
               // check water level & pump water on if we have enough water.
@@ -507,8 +513,12 @@ int checkWaterPump() {
               }
               else {
                 Serial.println("Water pump failed - water level too low");
-              }
-            }
+               }
+                return 1; // plant watering
+             }
+             else {
+                return 0; // no plant watering
+             }
       }
       else if (runmode == 1) {
             if (currentMillis - PumpPrevMillis >= PumpInterval) {
@@ -516,14 +526,18 @@ int checkWaterPump() {
               PumpInterval = defaultPumpInterval;
               if (checkWaterLevel() > 0.5) {
                 pumpWater(1); // pump water on if we have enough water.
+               
               }
               else {
                 Serial.println("Water pump failed - water level too low");
-              }
+               }
+              return 1;
             }
             else if (currentMillis - PumpPrevMillis >= PumpDuration) {
               pumpWater(0); // pump water off
+              return 0;
             }
+            
       }
 }
 
@@ -555,18 +569,21 @@ void loadCurrentStatus () {
     unsigned long lastPumpPrevMillis = 0;
   } data;
   
-  // reload data for EEPROM, see the change
   EEPROM.get(addr,data);
   if (data.saved == 1) {
     lastMillis = data.lastMillis;
     PumpPrevMillis = data.lastPumpPrevMillis;
   }
+  
   currentMillis = lastMillis + millis();
-  Serial.print("read saved ");
+  /*Serial.print("read saved ");
   Serial.println(data.saved);
+  Serial.print("currentMillis: ");
+  Serial.println(currentMillis);
   Serial.print("read lastMillis: ");
   Serial.println(lastMillis);
   Serial.print("read pump prev: ");
   Serial.println(PumpPrevMillis);  
+  */
 }
 
