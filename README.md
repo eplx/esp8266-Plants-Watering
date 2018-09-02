@@ -1,7 +1,7 @@
 # Smart Plant Watering
-Using this project you can water your plant/s automatically considering external temperature, humidity and light. Also you can use this as a home weather station and check temperature, humidity and lightness from your cellphone or computer just using a browser..
+Using this project you can water your plant/s automatically considering external temperature, humidity, light and weather conditions. Also you can use this as a home weather station and check temperature, humidity and lightness from your cellphone or computer just using a browser..
 
-Are you leaving on vacation and nobody is available to water the plants.... This project will help!!
+Are you leaving on vacation and nobody is available to water your plants.... this project will help!
 
 Requirements:
 
@@ -17,4 +17,5 @@ Requirements:
 
 View more details on https://www.instructables.com/id/Smart-Plant-Watering
 
+Reports:
 ThingSpeaks channel: https://thingspeak.com/channels/504661
