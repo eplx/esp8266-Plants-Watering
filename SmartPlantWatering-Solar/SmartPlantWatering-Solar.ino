@@ -44,12 +44,12 @@ const unsigned long defaultSleepInterval = 900000;  // 15 minutes
 /* ThingSpeaks */
 int ThingSpeaks_WAIT = 15500; // if you are using free ThingSpeaks version you need to wait about 15 seconds between updates.
 char ThingSpeaks_URL[100] = "http://api.thingspeak.com/update?api_key=";
-char ThingSpeaks_KEY[100] = "xxx"; // Thingspeak key
+char ThingSpeaks_KEY[100] = "xxxx"; // Thingspeak key
 
 /* OpenWeatherMap */
 // This information will adjust watering frequency/duration considering actual weather and forecast for the next hours.
-char openWeatherAPIid[10] = "000";             // Location - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - ID
-char openWeatherAPIappid[50] = "xxx";          // Your APP ID - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - APP ID
+char openWeatherAPIid[10] = "0000";             // Location - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - ID
+char openWeatherAPIappid[50] = "xxxx";          // Your APP ID - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - APP ID
 
 /* Sensors PINS (refer to schematic)
     DH11 --> D2
@@ -178,15 +178,18 @@ int WeatherForecast[3];               // OpenWeatherAPI - next two days
     if (runmode == 2) {
       unsigned long SleepMicroSeconds = 0;
       EEPROM.begin(512);
+      
       loadCurrentStatus();
       if (checkWaterPump() == 1) {
+        powerSaving();
         currentMillis = 0 + SleepInterval;      // init currentMillis - no need to track last value for saving energy mode
         lastMillis = 0;                         // Init lastMillis 
       }
       else {
+        powerSaving();
         currentMillis = lastMillis + millis() + SleepInterval;  
       }
-      powerSaving();
+
       Serial.println("...sending information to ThingSpeaks");
       updateThingSpeaks();      
       saveCurrentStatus();
