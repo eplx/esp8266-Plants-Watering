@@ -17,10 +17,12 @@ Requirements:
 
 Currently there are two "stable" releases (feel free to submit bugs/comments if you if find any, so that will help to make it more "stable")
 
-<b>Version 1.03</b> - uses a local web server runningo on ESP8266 so you can check all measurements through the web (i.e. from your cellphone or computer)
+<b>Version 1.03</b> - uses a local web server runningo on ESP8266 so you can check all measurements through the web (i.e. from your cellphone or computer).
+
     View more details on https://www.instructables.com/id/Smart-Plant-Watering
 
-<b>Version 2.03</b> - optimized to be running on batteries, so it uses deep sleep mode and publish data to ThingSpeak portal so you can check information from that site 
+<b>Version 2.03</b> - optimized to be running on batteries, so it uses deep sleep mode and publish data to ThingSpeak portal so you can check information from that site.
+
     View more details on https://www.instructables.com/id/Smart-Plant-Watering-Using-ThingSpeaks-and-Powered/
     For example, I am using this ThingSpeaks channel to publish data from my current smart plant watering esp8266: https://thingspeak.com/channels/504661
 
