@@ -18,6 +18,7 @@
           Modified LighSensor logic
    2.02 - Added "runmode" function to choose between *normal* or *energy-saving* modes
    2.03 - Fixed next plant watering issue (time not updating when the device wakes up)
+   2.04 - Optmized checkWaterPump function for runmode 2 (12/25/18)
 */
 #include <SimpleDHT.h>          // DHT11 temperature & humidity sensor library
 #include <ESP8266WiFi.h>        // Wifi library
@@ -35,21 +36,21 @@
    3600000000 microseconds = 1 hour
 */
 const unsigned long defaultPumpInterval = 86400000; // 24 hours
-const unsigned long defaultSleepInterval = 900000;  // 15 minutes
+const unsigned long defaultSleepInterval = 90;//900000;  // 15 minutes
 
 /* Configuration for third party sites used by this code
  * ThingSpeak.com - used for IoT analytis, posting captured values (i.e. temperature, humidity, etc) and creating charts
  * OpenWeatherMap.org - Use openweathermap.org to get weather info from actual location.
 */
 /* ThingSpeaks */
-int ThingSpeaks_WAIT = 15500; // if you are using free ThingSpeaks version you need to wait about 15 seconds between updates.
+int ThingSpeaks_WAIT = 10;//15500; // if you are using free ThingSpeaks version you need to wait about 15 seconds between updates.
 char ThingSpeaks_URL[100] = "http://api.thingspeak.com/update?api_key=";
-char ThingSpeaks_KEY[100] = "xxxx"; // Thingspeak key
+char ThingSpeaks_KEY[100] = "0000000"; // Thingspeak key
 
 /* OpenWeatherMap */
 // This information will adjust watering frequency/duration considering actual weather and forecast for the next hours.
-char openWeatherAPIid[10] = "0000";             // Location - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - ID
-char openWeatherAPIappid[50] = "xxxx";          // Your APP ID - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - APP ID
+char openWeatherAPIid[10] = "000000";             // Location - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - ID
+char openWeatherAPIappid[50] = "000000";          // Your APP ID - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - APP ID
 
 /* Sensors PINS (refer to schematic)
     DH11 --> D2
@@ -143,6 +144,9 @@ int WeatherForecast[3];               // OpenWeatherAPI - next two days
         ESP.reset();
       delay(5000);
     }
+
+    /* uncomment ONLY to test water pump */
+    //testWaterPump();
   
     Serial.println("Listeining on IP:");
     Serial.println(WiFi.localIP());
@@ -189,6 +193,7 @@ int WeatherForecast[3];               // OpenWeatherAPI - next two days
         powerSaving();
         currentMillis = lastMillis + millis() + SleepInterval;  
       }
+
 
       Serial.println("...sending information to ThingSpeaks");
       updateThingSpeaks();      
@@ -492,16 +497,26 @@ void powerSaving() {
         }
 }
 
+/* testWaterPump function */
+/* ONLY for testing */
+/* activate water pump 3 times during 5 seconds */
+int testWaterPump() {
+  for (int x=1; x<4; x++)  {
+  pumpWater(1); 
+  delay(5000);
+  pumpWater(0);
+  delay(5000);
+  }
+  pumpWater(0); 
+}
+
 /* checkWaterPump function
  *  description: verify if we need to activate water pump
  *  uses currentMillis information and PumpInterval to know when the pump should be activated
  */
 int checkWaterPump() {
       // Check if it is time for plant watering - PumpWater Logic
-      /*Serial.println(currentMillis);
-      Serial.println(PumpPrevMillis);
-      Serial.println(PumpInterval);
-      */
+      /* runmode 2 - saving energy mode */
       if (runmode == 2) {
             if (currentMillis - PumpPrevMillis >= PumpInterval) {
               PumpPrevMillis = 0;     // init currentMillis - no need to track last value for saving energy mode
@@ -510,6 +525,10 @@ int checkWaterPump() {
               Serial.println("Water pump activated");
               // check water level & pump water on if we have enough water.
               if (checkWaterLevel() > 0.5) {
+                pumpWater(1); 
+                delay(PumpDuration);
+                pumpWater(0);
+                delay(10000);
                 pumpWater(1); 
                 delay(PumpDuration);
                 pumpWater(0);
@@ -579,7 +598,8 @@ void loadCurrentStatus () {
   }
   
   currentMillis = lastMillis + millis();
-  /*Serial.print("read saved ");
+  /*
+  Serial.print("read saved ");
   Serial.println(data.saved);
   Serial.print("currentMillis: ");
   Serial.println(currentMillis);
