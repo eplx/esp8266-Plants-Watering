@@ -19,6 +19,7 @@
    2.02 - Added "runmode" function to choose between *normal* or *energy-saving* modes
    2.03 - Fixed next plant watering issue (time not updating when the device wakes up)
    2.04 - Optmized checkWaterPump function for runmode 2 (12/25/18)
+   2.05 - fixed water level calculation (5/30/2019)
 */
 #include <SimpleDHT.h>          // DHT11 temperature & humidity sensor library
 #include <ESP8266WiFi.h>        // Wifi library
@@ -60,20 +61,18 @@ char openWeatherAPIappid[50] = "000000";          // Your APP ID - Uses openweat
     Ultrasonic sensor (echo) -> D7
 */
 
-/* water can level (reference only) - this is a reference using a 10lts water can. This may vary based on your water can
- *  35cm - empty
- *  30cm - 1 litre
- *  25cm - 2 litres
- *  21cm - 3 litres
- *  15cm - 5 litres
- *  11cm - 6 litres
+/* water can level (reference only) - This may vary based on your water can
+ *  watercanWidht
+ *  watercanHeight
+ *  watercanLength
+ *  WaterLevelcurrent
  */
 #define runmode 2                         // runmode -> 1(normal) / 2(power saving)
 #define trigPin D6                        // Ultrasonic sensor - Trigger
 #define echoPin D7                        // Ultrasonic sensor - Echo
-//float WaterLevelEmpty = 35;             // NEED to adjust based on your water jerry can - Empty
-float WaterLevelFull = 11;                // NEED to adjust based on your water jerry can - Full
-float WaterLevelLitres = 6;               // NEED to adjust based on your water jerry can - Capacity in litres
+float watercanWidht = 16;                 // NEED to adjust based on your water jerry can (cms)
+float watercanHeight = 25;                 // NEED to adjust based on your water jerry can (cms)
+float watercanLength = 23;                 // NEED to adjust based on your water jerry can (cms)
 float WaterLevelcurrent = 0;
 int pinDHT11 = D2;                        // DHT digital Input (Digital)
 int pinPhotoCell = A0;                    // PhotoCell Input (Analog)
@@ -447,7 +446,8 @@ float checkWaterLevel() {
   duration = pulseIn(echoPin, HIGH);
   distance = (duration/2) / 29.1;
   //Serial.print(distance); Serial.println(" cm");
-  litres =  WaterLevelLitres * WaterLevelFull / distance;
+ //itres =  WaterLevelLitres * WaterLevelFull / distance;
+  litres = watercanWidht * watercanLength * (watercanHeight - WaterLevelcurrent) * 0.001;
   //Serial.print(litres); Serial.println(" lts");
   if (litres < 0) 
     { 
