@@ -19,7 +19,8 @@
    2.02 - Added "runmode" function to choose between *normal* or *energy-saving* modes
    2.03 - Fixed next plant watering issue (time not updating when the device wakes up)
    2.04 - Optmized checkWaterPump function for runmode 2 (12/25/18)
-   2.05 - fixed water level calculation (5/30/2019)
+   2.05 - Fixed water level calculation (5/30/2019)
+   2.06 - Added OTA support and new runmodes "always on" , "energy saving" , "auto" (07/14/2019)
 */
 #include <SimpleDHT.h>          // DHT11 temperature & humidity sensor library
 #include <ESP8266WiFi.h>        // Wifi library
@@ -27,7 +28,7 @@
 #include <ESP8266HTTPClient.h>  // Library for HTTP requests
 #include <ArduinoJson.h>        // Library to read JSON files
 #include <EEPROM.h>             // Library to save/read values from eeprom (persistent data)
-//#include <ESP8266WebServer.h> // to be used later
+#include <ArduinoOTA.h>         // Library used to update firmware over the air (OTA)
 
 /* Watering/Sleep interval configuration - reference
    86400000 milliseconds =  24hours
@@ -37,21 +38,23 @@
    3600000000 microseconds = 1 hour
 */
 const unsigned long defaultPumpInterval = 86400000; // 24 hours
-const unsigned long defaultSleepInterval = 90;//900000;  // 15 minutes
+const unsigned long defaultSleepInterval = 900000;  // 15 minutes
 
 /* Configuration for third party sites used by this code
  * ThingSpeak.com - used for IoT analytis, posting captured values (i.e. temperature, humidity, etc) and creating charts
  * OpenWeatherMap.org - Use openweathermap.org to get weather info from actual location.
 */
 /* ThingSpeaks */
-int ThingSpeaks_WAIT = 10;//15500; // if you are using free ThingSpeaks version you need to wait about 15 seconds between updates.
+int ThingSpeaks_WAIT = 15500;//15500; // if you are using free ThingSpeaks version you need to wait about 15 seconds between updates.
 char ThingSpeaks_URL[100] = "http://api.thingspeak.com/update?api_key=";
-char ThingSpeaks_KEY[100] = "0000000"; // Thingspeak key
+char ThingSpeaks_KEY[100] = "xxx"; // Thingspeak key
 
 /* OpenWeatherMap */
 // This information will adjust watering frequency/duration considering actual weather and forecast for the next hours.
-char openWeatherAPIid[10] = "000000";             // Location - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - ID
-char openWeatherAPIappid[50] = "000000";          // Your APP ID - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - APP ID
+char openWeatherAPIid[10] = "xxxx";             // Location - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - ID
+char openWeatherAPIappid[50] = "xxxx";          // Your APP ID - Uses openweathermap.org to get weather info from actual location - http://api.openweathermap.org/ - APP ID
+
+
 
 /* Sensors PINS (refer to schematic)
     DH11 --> D2
@@ -67,20 +70,24 @@ char openWeatherAPIappid[50] = "000000";          // Your APP ID - Uses openweat
  *  watercanLength
  *  WaterLevelcurrent
  */
-#define runmode 2                         // runmode -> 1(normal) / 2(power saving)
+
 #define trigPin D6                        // Ultrasonic sensor - Trigger
 #define echoPin D7                        // Ultrasonic sensor - Echo
+#define Mode 3                            // 1=always on ; 2=energy-saving ; 3=auto(always on during daylight and sleepmode during night)
+
+int runmode=1;                            // runmode -> 1(normal) / 2(power saving) / 3(auto)
 float watercanWidht = 16;                 // NEED to adjust based on your water jerry can (cms)
 float watercanHeight = 25;                 // NEED to adjust based on your water jerry can (cms)
 float watercanLength = 23;                 // NEED to adjust based on your water jerry can (cms)
 float WaterLevelcurrent = 0;
+//long UpgradeWaiting = 100000;
 int pinDHT11 = D2;                        // DHT digital Input (Digital)
 int pinPhotoCell = A0;                    // PhotoCell Input (Analog)
 int pinWaterPump = D3;                    // WaterPump relay Output (Digital
 long PumpInterval = defaultPumpInterval;  // default interval to water  (24 hours)
-long DefaultPumpDuration = 20000;         // default water duration (seconds)
+long DefaultPumpDuration = 15000;         // default water duration (seconds)
 long PumpDuration = 0;                    // pumpDuration
-long WeatherCheckInterval = 1800000;      // default weather check interval (30 minutes)
+long WeatherCheckInterval = 900000;      // default weather check interval (15 minutes) / only for runmode 1
 unsigned long SleepInterval = defaultSleepInterval; // default sleep time (1 hour)
 unsigned long PumpPrevMillis = 0;         // store last time for Water Pump
 unsigned long WeatherCheckPrevMillis = 0; // Weather prev milliseconds
@@ -123,19 +130,13 @@ int WeatherForecast[3];               // OpenWeatherAPI - next two days
     WiFi.mode(WIFI_STA); // for light Sleep mode
     wifi_set_sleep_type(LIGHT_SLEEP_T); // Enable Light Sleep mode
   
-    // Wifi configuration - uses WifiManger library
+    //Wifi configuration - uses WifiManger library
     //WifiManager configuration - it will try to connect to known network or prompt for information to connect.
     //WifiManager library used -- https://github.com/tzapu/WiFiManager
-    
     wifiManager.setBreakAfterConfig(true);  //exit after config instead of connecting
-  
-    Serial.println("Initializing custom parameters..");
-
     //reset settings - only for testing
     //wifiManager.resetSettings(); // uncomment this line only for testing and reset wifi settings.
-
     Serial.println("initializing WiFi..");
-
     //If no previous WIFI settings are available, it will be enabled as AP with default SSID "SmartWaterPlant" and password "water"
     if (!wifiManager.autoConnect("1 SmartWaterPlant", "water")) {
       Serial.println("Wifi - connection failed...Reset in progress");
@@ -143,12 +144,15 @@ int WeatherForecast[3];               // OpenWeatherAPI - next two days
         ESP.reset();
       delay(5000);
     }
-
     /* uncomment ONLY to test water pump */
     //testWaterPump();
   
     Serial.println("Listeining on IP:");
     Serial.println(WiFi.localIP());
+
+    // check for firmware update
+    initOTA();
+   
     Serial.println("Initializing sensors...");
     // DHT11 sensor (temperature, humidity)
     int err = SimpleDHTErrSuccess;
@@ -162,7 +166,7 @@ int WeatherForecast[3];               // OpenWeatherAPI - next two days
     LightValue = checkPhotoCellSensor();
     (LightValue > 0) ? Serial.println("photoCell sensor - Ok") :Serial.println("photoCell sensor - Failed");
 
-    //ultrasonic Sensor (Water level)
+    //ultrasonic Sensor (used for Water level)
     WaterLevelcurrent = checkWaterLevel();
     (WaterLevelcurrent > 0) ? Serial.println("WaterLevel sensor - Ok ") :Serial.println("WaterLevel sensor - Failed (no water)");
     Serial.println(WaterLevelcurrent);
@@ -176,7 +180,47 @@ int WeatherForecast[3];               // OpenWeatherAPI - next two days
     
     Serial.println("...adjusting watering based on sensors & weather");
     smartWatering();
-        
+
+    /*select running mode */
+
+    if (Mode==1) {
+      runmode = 1;
+    }
+    else if (Mode ==2) {
+      runmode = 2;
+    }
+    else if (Mode ==3) {
+    //Adjust runmode base on Light Level (>30 normal mode)
+      (LightValue > 30) ? runmode=1 : runmode=2;
+   
+    }
+
+if (runmode == 1) {
+      EEPROM.begin(512);        // Open EEPROM
+      currentMillis = millis(); 
+      loadCurrentStatus();      // Get latest info from EEPROM 
+      Serial.println("...sending information to ThingSpeaks");
+      updateThingSpeaks();
+      Serial.println("...initialization completed!");
+ }
+}
+
+/* Main Loop */
+void loop() {
+    /* For mode 3 (auto) - check light and adjust */
+    if (Mode == 3) {
+         if (LightValue > 30) {
+          runmode=1; 
+         }
+         else {
+          if (runmode==1) {
+            saveCurrentStatus(); // before changing mode (1 -> 2), we save current status  
+          }
+          runmode=2;
+         }
+         
+    }
+
     /* runmode == 2 - power saving mode using deep sleep */
     if (runmode == 2) {
       unsigned long SleepMicroSeconds = 0;
@@ -204,28 +248,26 @@ int WeatherForecast[3];               // OpenWeatherAPI - next two days
       Serial.println(" microseconds");
       ESP.deepSleep(SleepMicroSeconds);
     }
-else {
-      currentMillis = millis();
-      Serial.println("...sending information to ThingSpeaks");
-      updateThingSpeaks();
-      Serial.println("...initialization completed!");
- }
-}
 
-/* Main Loop - used for normal mode - to be developed*/
-void loop() {
-
-  currentMillis = lastMillis + millis();
 
   /* runmode == 1 - normal mode */
-  if (runmode == 1) {
+  else if (runmode == 1) {
+  
+        currentMillis = lastMillis + millis();
+        ArduinoOTA.handle();
+        // Serial.println(currentMillis);
+        // Serial.println(WeatherCheckPrevMillis);
+        // Serial.println(WeatherCheckInterval);
       // Check forecast & adjust Watering interval & update other values
       if (currentMillis - WeatherCheckPrevMillis >= WeatherCheckInterval) {
           WeatherCheckPrevMillis = currentMillis;
           WaterLevelcurrent = checkWaterLevel(); // update water level
+          LightValue = checkPhotoCellSensor(); // check Light sensor
           checkCurrentWeather();
           checkForecastWeather();
           smartWatering();
+          Serial.println("...sending information to ThingSpeaks");
+          updateThingSpeaks();
       }
       checkWaterPump(); // check if we need to activate water pump
   }
@@ -234,6 +276,37 @@ void loop() {
 
 
 /* functions */
+void initOTA() {
+   // Port defaults to 8266
+  // ArduinoOTA.setPort(8266);
+
+  // Hostname defaults to esp8266-[ChipID]
+  // ArduinoOTA.setHostname("myesp8266");
+
+  // No authentication by default
+  // ArduinoOTA.setPassword((const char *)"123");
+
+  ArduinoOTA.onStart([]() {
+    Serial.println("Start");
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nEnd");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  });
+  ArduinoOTA.begin();
+
+}
+
 
 void pumpWater(int mode) {
   if (mode == 1) {
@@ -447,7 +520,7 @@ float checkWaterLevel() {
   distance = (duration/2) / 29.1;
   //Serial.print(distance); Serial.println(" cm");
  //itres =  WaterLevelLitres * WaterLevelFull / distance;
-  litres = watercanWidht * watercanLength * (watercanHeight - WaterLevelcurrent) * 0.001;
+  litres = watercanWidht * watercanLength * (watercanHeight - distance) * 0.001;
   //Serial.print(litres); Serial.println(" lts");
   if (litres < 0) 
     { 
@@ -543,11 +616,18 @@ int checkWaterPump() {
              }
       }
       else if (runmode == 1) {
+            Serial.println("Check Water Pump...");
             if (currentMillis - PumpPrevMillis >= PumpInterval) {
               PumpPrevMillis = currentMillis;
               PumpInterval = defaultPumpInterval;
               if (checkWaterLevel() > 0.5) {
-                pumpWater(1); // pump water on if we have enough water.
+                pumpWater(1); 
+                delay(PumpDuration);
+                pumpWater(0);
+                delay(10000);
+                pumpWater(1); 
+                delay(PumpDuration);
+                pumpWater(0);
                
               }
               else {
@@ -609,4 +689,7 @@ void loadCurrentStatus () {
   Serial.println(PumpPrevMillis);  
   */
 }
+
+
+
 
